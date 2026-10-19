@@ -1,6 +1,12 @@
 import type { Metadata } from "next";
-import "./globals.css";
+import "globals.css";
+import type { Viewport } from "next";
 
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+};
 export const metadata: Metadata = {
   title: "Сурагчийн ирц",
   description: "Сургуулийн ирцийн бүртгэлийн систем",

@@ -195,10 +195,7 @@ export default function HomePage() {
   return (
     <main className="app-shell">
       <section className="phone-frame">
-        <div className="statusbar">
-          <span>9:41</span>
-          <span className="system-icons">▮▮ ◉ ▰</span>
-        </div>
+        
 
         {page === "install" ? (
           <div className="login-page">

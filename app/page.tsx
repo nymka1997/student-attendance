@@ -241,8 +241,11 @@ export default function HomePage() {
           <div className="login-page">
             <div className="brand">
               <div className="brand-icon">
-                <BookOpen size={62} strokeWidth={2.2} />
-                <GraduationCapIcon />
+                <img
+    src="/icon.svg"
+    alt="Сургуулийн лого"
+    className="school-logo"
+  />
               </div>
               <h1>Сурагчийн ирц</h1>
               <p>Сургуулийн ирцийн бүртгэлийн систем</p>

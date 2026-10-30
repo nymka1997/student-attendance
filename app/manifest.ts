@@ -1,17 +1,39 @@
-import type { MetadataRoute } from 'next';
+
+import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: 'Сурагчийн ирц',
-    short_name: 'Сурагчийн ирц',
-    description: 'Сургуулийн ирцийн бүртгэлийн систем',
-    start_url: '/',
-    display: 'standalone',
-    background_color: '#f5f8fc',
-    theme_color: '#0f766e',
-    lang: 'mn',
+    id: "/",
+    name: "Сурагчийн ирц",
+    short_name: "Ирц",
+    description: "Сургуулийн ирцийн бүртгэлийн систем",
+    start_url: "/",
+    scope: "/",
+    display: "standalone",
+    orientation: "portrait",
+    background_color: "#f5f8fc",
+    theme_color: "#0f766e",
+    lang: "mn",
+
     icons: [
-     { src: '/icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'maskable' }
-    ]
+      {
+        src: "/icon-192.png",
+        sizes: "192x192",
+        type: "image/png",
+        purpose: "any",
+      },
+      {
+        src: "/icon-512.png",
+        sizes: "512x512",
+        type: "image/png",
+        purpose: "any",
+      },
+      {
+        src: "/icon-512.png",
+        sizes: "512x512",
+        type: "image/png",
+        purpose: "maskable",
+      },
+    ],
   };
 }

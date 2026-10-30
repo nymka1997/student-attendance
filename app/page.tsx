@@ -159,6 +159,18 @@ useEffect(() => {
 
   return () => unsubscribe();
 }, []);
+useEffect(() => {
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker
+      .register("/sw.js")
+      .then(() => {
+        console.log("PWA Service Worker бүртгэгдлээ.");
+      })
+      .catch((error) => {
+        console.error("Service Worker алдаа:", error);
+      });
+  }
+}, []);
 
   // Хайлтаар сурагч шүүх
   const filteredStudents = useMemo(

@@ -6,10 +6,11 @@ import Image from "next/image";
 import {
   Download,
   Smartphone,
-  Share,
   MonitorDown,
-  CheckCircle2,
+  Share,
   PlusSquare,
+  X,
+  CheckCircle2,
 } from "lucide-react";
 
 type InstallPromptEvent = Event & {
@@ -30,6 +31,7 @@ export default function InstallPage({
   const [isIOS, setIsIOS] = useState(false);
   const [isInstalled, setIsInstalled] = useState(false);
   const [installing, setInstalling] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
 
   useEffect(() => {
     const checkInstalled = () => {
@@ -44,8 +46,9 @@ export default function InstallPage({
 
     checkInstalled();
 
-    const userAgent = window.navigator.userAgent;
-    setIsIOS(/iphone|ipad|ipod/i.test(userAgent));
+    setIsIOS(
+      /iphone|ipad|ipod/i.test(window.navigator.userAgent)
+    );
 
     const handleBeforeInstallPrompt = (event: Event) => {
       event.preventDefault();
@@ -54,7 +57,6 @@ export default function InstallPage({
 
     const handleAppInstalled = () => {
       setIsInstalled(true);
-      onContinue();
     };
 
     window.addEventListener(
@@ -78,29 +80,36 @@ export default function InstallPage({
         handleAppInstalled
       );
     };
-  }, [onContinue]);
+  }, []);
 
   const handleInstall = async () => {
-    if (!installPrompt) return;
+    // Android болон дэмждэг компьютерийн браузер
+    if (installPrompt) {
+      try {
+        setInstalling(true);
 
-    try {
-      setInstalling(true);
+        await installPrompt.prompt();
 
-      await installPrompt.prompt();
+        const choice = await installPrompt.userChoice;
 
-      const choice = await installPrompt.userChoice;
-
-      if (choice.outcome === "accepted") {
-        setIsInstalled(true);
-        setInstallPrompt(null);
-      } else {
-        setInstallPrompt(null);
+        if (choice.outcome === "accepted") {
+          setIsInstalled(true);
+          setInstallPrompt(null);
+        } else {
+          setInstallPrompt(null);
+        }
+      } catch (error) {
+        console.error("PWA суулгах алдаа:", error);
+        setShowHelp(true);
+      } finally {
+        setInstalling(false);
       }
-    } catch (error) {
-      console.error("PWA суулгах алдаа:", error);
-    } finally {
-      setInstalling(false);
+
+      return;
     }
+
+    // iPhone болон суулгах цонх дэмждэггүй браузер
+    setShowHelp(true);
   };
 
   return (
@@ -126,11 +135,11 @@ export default function InstallPage({
             <div
               style={{
                 textAlign: "center",
-                marginBottom: 24,
+                marginBottom: 28,
               }}
             >
               <Smartphone
-                size={48}
+                size={50}
                 style={{
                   margin: "0 auto 14px",
                   color: "#2563eb",
@@ -141,36 +150,32 @@ export default function InstallPage({
                 Сурагчийн ирц апп
               </h2>
 
-              <p style={{ margin: 0, lineHeight: 1.7 }}>
+              <p
+                style={{
+                  margin: 0,
+                  lineHeight: 1.6,
+                }}
+              >
                 Аппыг төхөөрөмждөө суулгаж,
                 үндсэн дэлгэцээс шууд ашиглаарай.
               </p>
             </div>
 
-            {isInstalled ? (
-              <div
-                style={{
-                  background: "#ecfdf5",
-                  color: "#047857",
-                  padding: 14,
-                  borderRadius: 12,
-                  textAlign: "center",
-                  marginBottom: 16,
-                }}
-              >
+            <button
+              type="button"
+              className="primary-btn"
+              onClick={handleInstall}
+              disabled={installing || isInstalled}
+            >
+              {isInstalled ? (
                 <CheckCircle2
-                  size={24}
-                  style={{ margin: "0 auto 8px" }}
+                  size={19}
+                  style={{
+                    verticalAlign: "middle",
+                    marginRight: 8,
+                  }}
                 />
-                <strong>Апп суусан байна</strong>
-              </div>
-            ) : installPrompt ? (
-              <button
-                type="button"
-                className="primary-btn"
-                onClick={handleInstall}
-                disabled={installing}
-              >
+              ) : (
                 <Download
                   size={19}
                   style={{
@@ -178,82 +183,84 @@ export default function InstallPage({
                     marginRight: 8,
                   }}
                 />
+              )}
 
-                {installing
-                  ? "Суулгаж байна..."
-                  : "Апп татах / Суулгах"}
-              </button>
-            ) : (
+              {installing
+                ? "Суулгаж байна..."
+                : isInstalled
+                  ? "Апп суусан байна"
+                  : "АПП ТАТАХ"}
+            </button>
+
+            {showHelp && !isInstalled && (
               <div
                 style={{
-                  background: "#f3f6fb",
+                  position: "relative",
+                  marginTop: 14,
                   padding: 16,
+                  background: "#f3f6fb",
+                  border: "1px solid #e2e8f0",
                   borderRadius: 12,
-                  marginBottom: 14,
+                  color: "#172033",
+                  fontSize: 13,
+                  lineHeight: 1.7,
                 }}
               >
+                <button
+                  type="button"
+                  onClick={() => setShowHelp(false)}
+                  aria-label="Заавар хаах"
+                  style={{
+                    position: "absolute",
+                    top: 8,
+                    right: 8,
+                    border: 0,
+                    background: "transparent",
+                    cursor: "pointer",
+                    color: "#64748b",
+                  }}
+                >
+                  <X size={18} />
+                </button>
+
                 {isIOS ? (
                   <>
-                    <p
-                      style={{
-                        fontWeight: 700,
-                        margin: "0 0 12px",
-                      }}
-                    >
+                    <strong>
                       <Share
-                        size={18}
+                        size={17}
                         style={{
                           display: "inline",
                           verticalAlign: "middle",
-                          marginRight: 7,
+                          marginRight: 6,
                         }}
                       />
-                      iPhone / iPad суулгах
-                    </p>
+                      iPhone дээр суулгах
+                    </strong>
 
-                    <p style={{ lineHeight: 1.7, margin: 0 }}>
-                      1. Safari браузераар энэ сайтыг нээнэ.
+                    <p>
+                      1. Энэ сайтыг Safari браузераар нээнэ.
                       <br />
                       2. Доод талын Share товчийг дарна.
                       <br />
                       3. Add to Home Screen сонгоно.
                       <br />
-                      4. Add товчийг дарж суулгана.
+                      4. Add товчийг дарна.
                     </p>
 
-                    <div
-                      style={{
-                        textAlign: "center",
-                        marginTop: 14,
-                        color: "#2563eb",
-                      }}
-                    >
-                      <PlusSquare size={30} />
+                    <div style={{ textAlign: "center" }}>
+                      <PlusSquare
+                        size={30}
+                        color="#2563eb"
+                      />
                     </div>
                   </>
                 ) : (
                   <>
-                    <p
-                      style={{
-                        fontWeight: 700,
-                        margin: "0 0 10px",
-                      }}
-                    >
-                      <Download
-                        size={18}
-                        style={{
-                          display: "inline",
-                          verticalAlign: "middle",
-                          marginRight: 7,
-                        }}
-                      />
-                      Апп суулгах
-                    </p>
-
-                    <p style={{ lineHeight: 1.7, margin: 0 }}>
+                    <strong>Апп суулгах</strong>
+                    <p>
                       Chrome браузерын цэсийг нээгээд
                       Install app эсвэл Add to Home Screen
-                      сонголтыг дарж суулгана.
+                      сонголтыг дарна уу.
                     </p>
                   </>
                 )}
@@ -265,7 +272,7 @@ export default function InstallPage({
               className="primary-btn"
               onClick={onContinue}
               style={{
-                marginTop: 12,
+                marginTop: 14,
                 background: "#475569",
               }}
             >

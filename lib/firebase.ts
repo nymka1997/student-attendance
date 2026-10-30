@@ -1,4 +1,10 @@
-import { getApp, getApps, initializeApp } from "firebase/app";
+
+import {
+  getApp,
+  getApps,
+  initializeApp,
+} from "firebase/app";
+
 import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
@@ -11,8 +17,24 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
-const configured = Boolean(firebaseConfig.apiKey && firebaseConfig.projectId && firebaseConfig.appId);
-export const firebaseApp = configured ? (getApps().length ? getApp() : initializeApp(firebaseConfig)) : null;
-export const auth = firebaseApp ? getAuth(firebaseApp) : null;
-export const db = firebaseApp ? getFirestore(firebaseApp) : null;
+const configured = Boolean(
+  firebaseConfig.apiKey &&
+  firebaseConfig.projectId &&
+  firebaseConfig.appId
+);
+
+export const firebaseApp = configured
+  ? getApps().length
+    ? getApp()
+    : initializeApp(firebaseConfig)
+  : null;
+
+export const auth = firebaseApp
+  ? getAuth(firebaseApp)
+  : null;
+
+export const db = firebaseApp
+  ? getFirestore(firebaseApp)
+  : null;
+
 export const isFirebaseConfigured = configured;

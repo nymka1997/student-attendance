@@ -6,114 +6,161 @@ import {
   BookOpen,
   CalendarDays,
   ChevronLeft,
-  ChevronRight,
-  CircleUserRound,
-  Download,
+  ClipboardCheck,
   Home,
-  LockKeyhole,
-  Eye,
-  EyeOff,
+  Menu,
+  Megaphone,
   UsersRound,
-  Save,
-  Check,
-  FileSpreadsheet,
+  UserRoundPlus,
+  CircleUserRound,
+  X,
   LogOut,
-  Search,
 } from "lucide-react";
 import * as XLSX from "xlsx";
-import { isFirebaseConfigured } from "@/lib/firebase";
+import {
+  onAuthStateChanged,
+  signOut,
+  signInWithEmailAndPassword,
+  type User,
+} from "firebase/auth";
 
-type Status = "Ирсэн" | "Өвчтэй" | "Чөлөөтэй" | "Тасалсан";
-type Student = { id: number; name: string; status: Status | "" };
-type Page =
-  | "install"
-  | "login"
-  | "grades"
-  | "sections"
-  | "attendance"
-  | "history"
-  | "profile";
+import {
+  doc,
+  getDoc,
+} from "firebase/firestore";
 
-type InstallPromptEvent = Event & {
-  prompt: () => Promise<void>;
-  userChoice: Promise<{
-    outcome: "accepted" | "dismissed";
-    platform: string;
-  }>;
-};
+import { auth, db } from "@/lib/firebase";
 
-const grades = Array.from({ length: 12 }, (_, i) => `${i + 1}-р анги`);
-const sections = ["а", "б", "в", "г", "д", "е", "ё"].map((x) => `6${x}`);
-const initialNames = [
-  "Бат-Эрдэнэ",
-  "Болор",
-  "Ганзориг",
-  "Мөнхжин",
-  "Саруул",
-  "Тэмүүлэн",
-  "Уянга",
-  "Энхжин",
-  "Анужин",
-  "Дөлгөөн",
-];
-const statuses: Status[] = ["Ирсэн", "Өвчтэй", "Чөлөөтэй", "Тасалсан"];
-const statusClass: Record<Status, string> = {
-  Ирсэн: "present",
-  Өвчтэй: "sick",
-  Чөлөөтэй: "excused",
-  Тасалсан: "absent",
-};
+import type {
+  Page,
+  Status,
+  Student,
+} from "@/lib/attendance-types";
+
+import {
+  initialNames,
+  statuses,
+} from "@/lib/attendance-data";
+
+import LoginPage from "@/components/attendance/LoginPage";
+import InstallPage from "@/components/attendance/InstallPage";
+import HomeDashboard from "@/components/attendance/HomeDashboard";
+import GradesPage from "@/components/attendance/GradesPage";
+import SectionsPage from "@/components/attendance/SectionsPage";
+import AttendancePage from "@/components/attendance/AttendancePage";
+import HistoryPage from "@/components/attendance/HistoryPage";
+import LateStudentsPage from "@/components/attendance/LateStudentsPage";
 
 export default function HomePage() {
-  const [page, setPage] = useState<Page>("install");
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
-  const [grade, setGrade] = useState("6-р анги");
-  const [section, setSection] = useState("6а");
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
-  const [search, setSearch] = useState("");
-  const [savedMessage, setSavedMessage] = useState("");
-  const [installPrompt, setInstallPrompt] =
-    useState<InstallPromptEvent | null>(null);
-  const [installHelp, setInstallHelp] = useState(false);
+  const [page, setPage] = useState<Page>("login");
+  const [showInstall, setShowInstall] = useState(false);
 
-  const [students, setStudents] = useState<Student[]>(
-    initialNames.map((name, i) => ({ id: i + 1, name, status: "" }))
+  const [username, setUsername] = useState("");
+
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+
+  const [authChecking, setAuthChecking] = useState(true);
+
+  const [loggingOut, setLoggingOut] = useState(false);
+
+  const [grade, setGrade] = useState("6-р анги");
+
+  const [section, setSection] = useState("6а");
+
+  const [date, setDate] = useState(
+    new Date().toISOString().slice(0, 10)
   );
 
+  const [search, setSearch] = useState("");
+
+  const [savedMessage, setSavedMessage] = useState("");
+
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  const [profileOpen, setProfileOpen] = useState(false);
+
+  const [students, setStudents] = useState<Student[]>(
+    initialNames.map((name, i) => ({
+      id: i + 1,
+      name,
+      status: "",
+    }))
+  );
+const [loginError, setLoginError] = useState("");
+  // PWA суулгасан эсэхийг шалгана. Суулгаагүй бол эхлээд суулгах дэлгэц харуулна.
   useEffect(() => {
-    const isInstalled =
+    const standalone =
       window.matchMedia("(display-mode: standalone)").matches ||
-      (navigator as Navigator & { standalone?: boolean }).standalone === true;
+      (window.navigator as Navigator & { standalone?: boolean }).standalone === true;
 
-    if (isInstalled) {
-      setPage("login");
-    }
-
-    const handleInstallAvailable = (event: Event) => {
-      event.preventDefault();
-      setInstallPrompt(event as InstallPromptEvent);
-    };
-
-    const handleInstalled = () => {
-      setInstallPrompt(null);
-      setInstallHelp(false);
-      setPage("login");
-    };
-
-    window.addEventListener("beforeinstallprompt", handleInstallAvailable);
-    window.addEventListener("appinstalled", handleInstalled);
-
-    return () => {
-      window.removeEventListener(
-        "beforeinstallprompt",
-        handleInstallAvailable
-      );
-      window.removeEventListener("appinstalled", handleInstalled);
-    };
+    setShowInstall(!standalone);
   }, []);
 
+  // Firebase нэвтрэлтийн төлөвийг автоматаар шалгана
+
+useEffect(() => {
+  const firebaseAuth = auth;
+  const firestore = db;
+
+  if (!firebaseAuth || !firestore) {
+    console.error("Firebase тохиргоо олдсонгүй.");
+    setAuthChecking(false);
+    setCurrentUser(null);
+    setPage("login");
+    return;
+  }
+
+  const unsubscribe = onAuthStateChanged(
+    firebaseAuth,
+    async (user) => {
+      if (!user) {
+        setCurrentUser(null);
+        setUsername("");
+        setPage("login");
+        setAuthChecking(false);
+        return;
+      }
+
+      try {
+        const userRef = doc(firestore, "users", user.uid);
+        const userSnapshot = await getDoc(userRef);
+
+        if (!userSnapshot.exists()) {
+          await signOut(firebaseAuth);
+          setCurrentUser(null);
+          setPage("login");
+          return;
+        }
+
+        const userData = userSnapshot.data();
+
+        if (userData.role !== "teacher") {
+          await signOut(firebaseAuth);
+          setCurrentUser(null);
+          setPage("login");
+          return;
+        }
+
+        setCurrentUser(user);
+        setUsername(
+          userData.name || user.displayName || user.email || ""
+        );
+        setPage("home");
+      } catch (error) {
+        console.error("Хэрэглэгчийн эрх шалгах алдаа:", error);
+        await signOut(firebaseAuth);
+        setCurrentUser(null);
+        setPage("login");
+      } finally {
+        setAuthChecking(false);
+      }
+    }
+  );
+
+  return () => unsubscribe();
+}, []);
+
+  // Хайлтаар сурагч шүүх
   const filteredStudents = useMemo(
     () =>
       students.filter((s) =>
@@ -122,464 +169,648 @@ export default function HomePage() {
     [students, search]
   );
 
+  // Ирцийн тоонууд
   const counts = useMemo(
     () =>
-      statuses.reduce(
-        (acc, status) => ({
-          ...acc,
-          [status]: students.filter((s) => s.status === status).length,
-        }),
-        {} as Record<Status, number>
-      ),
+      statuses.reduce((acc, status) => {
+        acc[status] = students.filter(
+          (s) => s.status === status
+        ).length;
+
+        return acc;
+      }, {} as Record<Status, number>),
     [students]
   );
 
-  const setStatus = (id: number, status: Status) =>
+  // Сурагчийн ирц өөрчлөх
+  const setStudentStatus = (
+    id: number,
+    status: Status
+  ) => {
     setStudents((current) =>
       current.map((s) =>
-        s.id === id ? { ...s, status: s.status === status ? "" : status } : s
+        s.id === id
+          ? {
+              ...s,
+              status: s.status === status ? "" : status,
+            }
+          : s
       )
     );
-
-  const goBack = () => {
-    setPage(
-      page === "attendance"
-        ? "sections"
-        : page === "sections"
-          ? "grades"
-          : "login"
-    );
   };
 
-  const handleInstall = async () => {
-    if (installPrompt) {
-      try {
-        await installPrompt.prompt();
-        const result = await installPrompt.userChoice;
-
-        if (result.outcome === "accepted") {
-          setInstallPrompt(null);
-        }
-      } catch {
-        setInstallHelp(true);
-      }
-      return;
-    }
-
-    setInstallHelp(true);
-  };
-
+  // Excel файл татах
   const exportExcel = () => {
     const rows = students.map((s, i) => ({
       "№": i + 1,
       "Сурагчийн нэр": s.name,
-      Анги: grade,
-      Бүлэг: section,
-      Огноо: date,
+      "Анги": grade,
+      "Бүлэг": section,
+      "Огноо": date,
       "Ирцийн төлөв": s.status || "Бүртгээгүй",
     }));
 
     const sheet = XLSX.utils.json_to_sheet(rows);
+
     const book = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(book, sheet, "Ирц");
-    XLSX.writeFile(book, `irts-${section}-${date}.xlsx`);
+
+    XLSX.utils.book_append_sheet(
+      book,
+      sheet,
+      "Ирц"
+    );
+
+    XLSX.writeFile(
+      book,
+      `irts-${section}-${date}.xlsx`
+    );
   };
 
+  // Ирц хадгалсан мэдэгдэл
   const saveAttendance = () => {
     setSavedMessage(
-      `Энэ сессэд ${students.filter((s) => s.status).length} сурагчийн ирцийг тэмдэглэлээ.`
+      `Энэ сессэд ${
+        students.filter((s) => s.status).length
+      } сурагчийн ирцийг тэмдэглэлээ.`
     );
-    window.setTimeout(() => setSavedMessage(""), 3500);
+
+    window.setTimeout(
+      () => setSavedMessage(""),
+      3500
+    );
   };
+
+  // Хуудас нээх
+  const openPage = (target: Page) => {
+    setPage(target);
+    setMenuOpen(false);
+    setProfileOpen(false);
+  };
+
+  // Буцах
+  const goBack = () => {
+    if (page === "attendance") {
+      setPage("sections");
+    } else if (page === "sections") {
+      setPage("grades");
+    } else {
+      setPage("home");
+    }
+  };
+
+
+  const handleLogin = async (password: string) => {
+  const firebaseAuth = auth;
+  const firestore = db;
+
+  if (!firebaseAuth || !firestore) {
+    alert("Firebase тохиргоо олдсонгүй.");
+    return;
+  }
+
+  const phone = username.replace(/\D/g, "");
+
+  if (!phone || !password) {
+    alert("Утасны дугаар болон нууц үгээ оруулна уу.");
+    return;
+  }
+
+  try {
+    const email = `bagsh.${phone}@login.student-attendance.mn`;
+
+    const credential = await signInWithEmailAndPassword(
+      firebaseAuth,
+      email,
+      password
+    );
+
+    const userRef = doc(
+      firestore,
+      "users",
+      credential.user.uid
+    );
+
+    const userSnapshot = await getDoc(userRef);
+
+    if (!userSnapshot.exists()) {
+      await signOut(firebaseAuth);
+      alert("Хэрэглэгчийн эрхийн мэдээлэл олдсонгүй.");
+      return;
+    }
+
+    const userData = userSnapshot.data();
+
+    if (userData.role !== "teacher") {
+      await signOut(firebaseAuth);
+      alert("Энэ системд зөвхөн багшийн эрхээр нэвтэрнэ.");
+      return;
+    }
+
+    setLoginError("");
+
+    setCurrentUser(credential.user);
+    setUsername(userData.name || phone);
+    setPage("home");
+
+  } catch (error: any) {
+  console.error("Нэвтрэх алдаа:", error);
+
+  if (
+    error.code === "auth/invalid-credential" ||
+    error.code === "auth/user-not-found" ||
+    error.code === "auth/wrong-password"
+  ) {
+    setLoginError("Нэвтрэх нэр эсвэл нууц үг буруу байна.");
+  } else if (error.code === "auth/too-many-requests") {
+    setLoginError("Олон удаа буруу оролдлоо. Түр хүлээнэ үү.");
+  } else {
+    setLoginError("Нэвтрэхэд алдаа гарлаа. Дахин оролдоно уу.");
+  }
+}
+};
+
+
+  // Firebase-аас гарах
+ const handleLogout = async () => {
+  try {
+    if (auth === null) {
+      throw new Error("Firebase Auth тохиргоо байхгүй байна.");
+    }
+
+    setLoggingOut(true);
+    setMenuOpen(false);
+    setProfileOpen(false);
+
+    await signOut(auth);
+
+    setCurrentUser(null);
+    setUsername("");
+    setPage("login");
+    setSavedMessage("");
+    setSearch("");
+    setLoggingOut(false);
+  } catch (error) {
+    console.error("Системээс гарах алдаа:", error);
+    setLoggingOut(false);
+  }
+};
+
+  // Хуудасны гарчиг
+  const pageTitles: Partial<Record<Page, string>> = {
+    home: "Нүүр хуудас",
+    grades: "Анги сонгох",
+    sections: `${grade} сонгох`,
+    attendance: `${section} ангийн ирц`,
+    history: "Манай ангийн ирц",
+    lateStudents: "Хоцорсон сурагч бүртгэх",
+    announcements: "Админы зар",
+    schedule: "Миний хичээлийн хуваарь",
+    classAttendance: "Манай ангийн ирц",
+  };
+
+  // Цэс
+  const menuItems: {
+    label: string;
+    icon: typeof Home;
+    page: Page;
+  }[] = [
+    {
+      label: "Нүүр хуудас",
+      icon: Home,
+      page: "home",
+    },
+    {
+      label: "Админы зар",
+      icon: Megaphone,
+      page: "announcements",
+    },
+    {
+      label: "Миний хичээлийн хуваарь",
+      icon: CalendarDays,
+      page: "schedule",
+    },
+    {
+      label: "Манай ангийн ирц",
+      icon: UsersRound,
+      page: "history",
+    },
+    {
+      label: "Хоцорсон сурагч бүртгэх",
+      icon: UserRoundPlus,
+      page: "lateStudents",
+    },
+    {
+      label: "Ирц бүртгэх",
+      icon: ClipboardCheck,
+      page: "grades",
+    },
+  ];
+
+  // Firebase шалгаж байх үед
+  if (authChecking) {
+    return (
+      <main className="app-shell">
+        <section className="phone-frame">
+          <div
+            style={{
+              minHeight: 300,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              flexDirection: "column",
+              gap: 12,
+            }}
+          >
+            <BookOpen size={36} />
+            <p>Нэвтрэлтийг шалгаж байна...</p>
+          </div>
+        </section>
+      </main>
+    );
+  }
+
+  if (showInstall) {
+    return (
+      <InstallPage
+        onContinue={() => setShowInstall(false)}
+      />
+    );
+  }
 
   return (
     <main className="app-shell">
       <section className="phone-frame">
-        
 
-        {page === "install" ? (
-          <div className="login-page">
-            <div className="brand">
-              <div className="brand-icon">
-                <BookOpen size={62} strokeWidth={2.2} />
-                <GraduationCapIcon />
-              </div>
-              <h1>Сурагчийн ирц</h1>
-              <p>Сургуулийн ирцийн бүртгэлийн систем</p>
-            </div>
-
-            <div className="login-form">
-              <button
-                className="primary-btn"
-                type="button"
-                onClick={handleInstall}
-              >
-                <Download size={20} style={{ marginRight: 8 }} />
-                Татаж авах
-              </button>
-
-              {installHelp && (
-                <div className="notice" role="status">
-                  <strong>Апп суулгах заавар</strong>
-                  <p>
-                    <b>Android:</b> Chrome-ийн цэснээс Install app эсвэл Add
-                    to Home screen сонгоно.
-                  </p>
-                  <p>
-                    <b>iPhone:</b> Safari-ийн Share цэснээс Add to Home Screen
-                    сонгоно.
-                  </p>
-                  <p>
-                    <b>Компьютер:</b> Chrome эсвэл Edge-ийн цэснээс Install
-                    app сонгоно.
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
-        ) : page === "login" ? (
-          <div className="login-page">
-            <div className="brand">
-              <div className="brand-icon">
-                <img
-    src="/icon.svg"
-    alt="Сургуулийн лого"
-    className="school-logo"
-  />
-              </div>
-              <h1>Сурагчийн ирц</h1>
-              <p>Сургуулийн ирцийн бүртгэлийн систем</p>
-            </div>
-
-            <form
-              className="login-form"
-              onSubmit={(e) => {
-                e.preventDefault();
-                setPage("grades");
-              }}
-            >
-              <label className="input-wrap">
-                <CircleUserRound size={19} />
-                <input
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  placeholder="Хэрэглэгчийн нэр"
-                  autoComplete="username"
-                />
-              </label>
-
-              <label className="input-wrap">
-                <LockKeyhole size={19} />
-                <input
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Нууц үг"
-                  type={showPassword ? "text" : "password"}
-                  autoComplete="current-password"
-                />
-                <button
-                  className="icon-button"
-                  type="button"
-                  onClick={() => setShowPassword((v) => !v)}
-                  aria-label="Нууц үг харуулах"
-                >
-                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                </button>
-              </label>
-
-              <button className="primary-btn" type="submit">
-                Нэвтрэх
-              </button>
-              <p className="demo-note">
-                Загварын горим: оруулсан мэдээлэл баталгаажихгүй.
-              </p>
-            </form>
-          </div>
+        {/* НЭВТРЭХ ХЭСЭГ */}
+        {page === "login" ? (
+         <LoginPage
+  username={username}
+  setUsername={setUsername}
+  onLogin={handleLogin}
+  loginError={loginError}
+/>
         ) : (
           <>
+
+            {/* ДЭЭД ЦЭС */}
             <header className="topbar">
+
               <button
                 className="back-button"
-                onClick={goBack}
-                aria-label="Буцах"
+                onClick={() => {
+                  if (page === "home") {
+                    setMenuOpen((v) => !v);
+                    setProfileOpen(false);
+                  } else {
+                    goBack();
+                  }
+                }}
+                aria-label={
+                  page === "home"
+                    ? "Цэс нээх"
+                    : "Буцах"
+                }
               >
-                {page !== "grades" && page !== "profile" ? (
+                {page === "home" ? (
+                  menuOpen ? <X /> : <Menu />
+                ) : (
                   <ChevronLeft />
-                ) : null}
+                )}
               </button>
 
               <h2>
-                {page === "grades"
-                  ? "Анги сонгох"
-                  : page === "sections"
-                    ? `${grade} сонгох`
-                    : page === "attendance"
-                      ? `${section} ангийн ирц`
-                      : page === "history"
-                        ? "Ирц харах"
-                        : "Профайл"}
+                {pageTitles[page] || "Сурагчийн ирц"}
               </h2>
 
               <button
-                className="avatar"
-                onClick={() => setPage("profile")}
-                aria-label="Профайл"
+                type="button"
+                aria-label="Профайл нээх"
+                onClick={() => {
+                  setProfileOpen((current) => !current);
+                  setMenuOpen(false);
+                }}
+                style={{
+                  width: 38,
+                  height: 38,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  border: 0,
+                  borderRadius: 10,
+                  background: profileOpen
+                    ? "#edf2ff"
+                    : "transparent",
+                  color: "#0b0b0b",
+                  cursor: "pointer",
+                }}
               >
-                <CircleUserRound size={25} />
+                {profileOpen ? (
+                  <X size={23} />
+                ) : (
+                  <CircleUserRound size={25} />
+                )}
               </button>
+
             </header>
 
-            {page === "grades" && (
-              <div className="list-page">
-                {grades.map((g) => (
-                  <button
-                    key={g}
-                    className={`select-card ${grade === g ? "selected" : ""}`}
-                    onClick={() => {
-                      setGrade(g);
-                      setPage("sections");
-                    }}
-                  >
-                    <span className="round-icon">
-                      <UsersRound />
-                    </span>
-                    <strong>{g}</strong>
-                    <ChevronRight className="chevron" />
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {page === "sections" && (
-              <div className="list-page">
-                {(grade === "6-р анги"
-                  ? sections
-                  : ["а", "б", "в", "г"]
-                ).map((s) => {
-                  const gradeNumber = grade.match(/\d+/)?.[0] ?? "6";
-                  const label = `${gradeNumber}${s.replace(/^\d+/, "")}`;
+            {/* ҮНДСЭН ЦЭС */}
+            {menuOpen && (
+              <div
+                style={{
+                  position: "absolute",
+                  zIndex: 20,
+                  top: 70,
+                  left: 10,
+                  right: 10,
+                  background: "#fff",
+                  border: "1px solid #e5eaf1",
+                  borderRadius: 14,
+                  padding: 8,
+                  boxShadow: "0 12px 30px #00000018",
+                }}
+              >
+                {menuItems.map((item) => {
+                  const Icon = item.icon;
 
                   return (
                     <button
-                      key={s}
-                      className="select-card"
-                      onClick={() => {
-                        setSection(label);
-                        setStudents(
-                          initialNames.map((name, i) => ({
-                            id: i + 1,
-                            name,
-                            status: "",
-                          }))
-                        );
-                        setPage("attendance");
+                      key={item.page}
+                      onClick={() => openPage(item.page)}
+                      style={{
+                        width: "100%",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 12,
+                        padding: 13,
+                        border: 0,
+                        borderRadius: 9,
+                        background:
+                          page === item.page
+                            ? "#edf2ff"
+                            : "#fff",
+                        textAlign: "left",
+                        color: "#172033",
+                        cursor: "pointer",
                       }}
                     >
-                      <span className="round-icon">
-                        <UsersRound />
-                      </span>
-                      <strong>{label}</strong>
-                      <ChevronRight className="chevron" />
+                      <Icon size={20} />
+                      <span>{item.label}</span>
                     </button>
                   );
                 })}
               </div>
             )}
 
+            {/* НҮҮР ХУУДАС */}
+            {page === "home" && (
+              <HomeDashboard />
+            )}
+
+            {/* АНГИ СОНГОХ */}
+            {page === "grades" && (
+              <GradesPage
+                onSelect={(g) => {
+                  setGrade(g);
+                  setPage("sections");
+                }}
+              />
+            )}
+
+            {/* БҮЛЭГ СОНГОХ */}
+            {page === "sections" && (
+              <SectionsPage
+                grade={grade}
+                onSelect={(s) => {
+                  setSection(s);
+
+                  setStudents(
+                    initialNames.map((name, i) => ({
+                      id: i + 1,
+                      name,
+                      status: "",
+                    }))
+                  );
+
+                  setPage("attendance");
+                }}
+              />
+            )}
+
+            {/* ИРЦ БҮРТГЭХ */}
             {page === "attendance" && (
-              <div className="attendance-page">
-                <div className="toolbar">
-                  <label className="date-label">
-                    Огноо
-                    <input
-                      type="date"
-                      value={date}
-                      onChange={(e) => setDate(e.target.value)}
-                    />
-                  </label>
+              <AttendancePage
+                students={students}
+                filteredStudents={filteredStudents}
+                date={date}
+                setDate={setDate}
+                search={search}
+                setSearch={setSearch}
+                counts={counts}
+                setStatus={setStudentStatus}
+                savedMessage={savedMessage}
+                onSave={saveAttendance}
+                onExport={exportExcel}
+              />
+            )}
 
-                  <label className="search-box">
-                    <Search size={16} />
-                    <input
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                      placeholder="Нэрээр хайх"
-                    />
-                  </label>
-                </div>
+            {/* ИРЦИЙН ТҮҮХ */}
+            {(page === "history" ||
+              page === "classAttendance") && (
+              <HistoryPage
+                onChooseGrade={() => setPage("grades")}
+              />
+            )}
 
-                <div className="summary-grid">
-                  {statuses.map((s) => (
-                    <div
-                      key={s}
-                      className={`summary-chip ${statusClass[s]}`}
-                    >
-                      <span>{s}</span>
-                      <b>{counts[s]}</b>
-                    </div>
-                  ))}
-                </div>
+            {/* ХОЦОРСОН СУРАГЧ */}
+            {page === "lateStudents" && (
+              <LateStudentsPage />
+            )}
 
-                <div className="table-wrap">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>№</th>
-                        <th>Сурагчийн нэр</th>
-                        {statuses.map((s) => (
-                          <th key={s}>{s}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredStudents.map((s) => (
-                        <tr key={s.id}>
-                          <td>{s.id}</td>
-                          <td className="student-name">{s.name}</td>
-                          {statuses.map((st) => (
-                            <td key={st}>
-                              <button
-                                aria-label={`${s.name}: ${st}`}
-                                title={st}
-                                onClick={() => setStatus(s.id, st)}
-                                className={`status-radio ${
-                                  s.status === st
-                                    ? `checked ${statusClass[st]}`
-                                    : ""
-                                }`}
-                              >
-                                {s.status === st ? <Check size={13} /> : null}
-                              </button>
-                            </td>
-                          ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+            {/* ХИЧЭЭЛИЙН ХУВААРЬ */}
+            {page === "schedule" && (
+              <div className="empty-state">
+                <CalendarDays size={42} />
+                <h3>Миний хичээлийн хуваарь</h3>
 
-                {savedMessage && (
-                  <p className="success-message">{savedMessage}</p>
-                )}
+                <p>
+                  Таны хичээлийн хуваарь энд харагдана.
+                </p>
 
-                <div className="action-row">
-                  <button className="save-btn" onClick={saveAttendance}>
-                    <Save size={19} />
-                    Өгөгдөл хадгалах
-                  </button>
-                  <button className="excel-btn" onClick={exportExcel}>
-                    <FileSpreadsheet size={20} />
-                    Excel (.xlsx) татах
-                  </button>
-                </div>
-
-                <p className="hint">
-                  Нэг сурагчид нэг төлөв сонгоно. Төлөв дээр дахин дарвал
-                  арилна.
+                <p>
+                  Хуваарийн өгөгдлийг Firebase эсвэл
+                  өөрийн хуваарийн эх үүсвэртэй холбох
+                  шаардлагатай.
                 </p>
               </div>
             )}
 
-            {page === "history" && (
-              <div className="empty-state">
-                <CalendarDays size={42} />
-                <h3>Ирцийн түүх</h3>
-                <p>Ирц бүртгэсний дараа тайланг Excel файлаар татаж авна.</p>
-                <button
-                  className="primary-btn"
-                  onClick={() => setPage("grades")}
+            {/* ПРОФАЙЛ */}
+            {profileOpen && (
+              <div
+                style={{
+                  position: "absolute",
+                  zIndex: 30,
+                  top: 68,
+                  right: 10,
+                  width: 250,
+                  padding: 16,
+                  border: "1px solid #e5eaf1",
+                  borderRadius: 14,
+                  background: "#fff",
+                  boxShadow: "0 12px 30px #00000020",
+                  color: "#131313",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 12,
+                    paddingBottom: 14,
+                    borderBottom: "1px solid #e5eaf1",
+                  }}
                 >
-                  Анги сонгох
+                  <div
+                    style={{
+                      width: 44,
+                      height: 44,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      borderRadius: "50%",
+                      background: "#eff6ff",
+                      color: "#0369a1",
+                    }}
+                  >
+                    <CircleUserRound size={27} />
+                  </div>
+
+                  <div style={{ minWidth: 0 }}>
+                    <strong
+                      style={{
+                        display: "block",
+                        overflowWrap: "anywhere",
+                      }}
+                    >
+                      {currentUser?.displayName ||
+                        currentUser?.email ||
+                        username ||
+                        "Хэрэглэгч"}
+                    </strong>
+
+                    <small style={{ color: "#667085" }}>
+                      Нэвтэрсэн хэрэглэгч
+                    </small>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  disabled={loggingOut}
+                  style={{
+                    width: "100%",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    marginTop: 12,
+                    padding: 12,
+                    border: 0,
+                    borderRadius: 10,
+                    background: "#fff1f2",
+                    color: "#be123c",
+                    cursor: loggingOut
+                      ? "not-allowed"
+                      : "pointer",
+                    textAlign: "left",
+                    opacity: loggingOut ? 0.6 : 1,
+                  }}
+                >
+                  <LogOut size={20} />
+                  <span>
+                    {loggingOut ? "Гарч байна..." : "Гарах"}
+                  </span>
                 </button>
               </div>
             )}
 
-            {page === "profile" && (
-              <div className="profile-page">
-                <div className="profile-avatar">
-                  <CircleUserRound size={48} />
-                </div>
-                <h3>{username || "Багшийн хэрэглэгч"}</h3>
-                <p>Загварын горим</p>
-                <div className="notice">
-                  {isFirebaseConfigured
-                    ? "Firebase тохиргоо илэрлээ. Нэвтрэлтийн ажиллагааг холбох шаардлагатай."
-                    : "Firebase хараахан тохируулаагүй байна."}
-                </div>
+            {/* НҮҮРНИЙ ДООД ТОВЧ */}
+            {(page === "home" ||
+              page === "announcements") && (
+              <nav className="bottom-nav">
+
                 <button
-                  className="outline-btn"
-                  onClick={() => setPage("login")}
+                  type="button"
+                  onClick={() => openPage("lateStudents")}
+                  style={{
+                    background: "#fff7ed",
+                    color: "#c2410c",
+                  }}
                 >
-                  <LogOut size={18} /> Гарах
+                  <UserRoundPlus size={22} />
+                  <span>Хоцорсон сурагч бүртгэх</span>
                 </button>
-              </div>
+
+                <button
+                  type="button"
+                  onClick={() => openPage("grades")}
+                  style={{
+                    background: "#16a34a",
+                    color: "#fff",
+                  }}
+                >
+                  <ClipboardCheck size={22} />
+                  <span>Ирц бүртгэх</span>
+                </button>
+
+              </nav>
             )}
 
-            <nav className="bottom-nav">
-              <button
-                className={page !== "history" ? "active" : ""}
-                onClick={() => setPage("grades")}
-              >
-                <Home size={22} />
-                <span>Нүүр хуудас</span>
-              </button>
-              <button
-                className={page === "history" ? "active" : ""}
-                onClick={() => setPage("history")}
-              >
-                <CalendarDays size={22} />
-                <span>Ирц харах</span>
-              </button>
-            </nav>
           </>
         )}
 
         <div className="safe-area" />
+
       </section>
 
+      {/* DESKTOP ТАЛЫН МЭДЭЭЛЭЛ */}
       <aside className="desktop-info">
+
         <div className="info-mark">
           <BookOpen size={36} />
         </div>
-        <p className="eyebrow">STARTER PROJECT</p>
+
+        <p className="eyebrow">
+          STUDENT ATTENDANCE
+        </p>
+
         <h1>Сурагчийн ирц</h1>
-        <p>VS Code дээр хөгжүүлэх эхний хувилбар</p>
+
+        <p>
+          Сургуулийн ирцийн бүртгэлийн систем
+        </p>
 
         <div className="info-card">
-          <h3>Төслийн төлөв</h3>
+          <h3>Үндсэн үйлдлүүд</h3>
+
           <p>
-            <span className="dot" /> Интерфэйс ба дэлгэц хоорондын шилжилт
-            бэлэн
+            <span className="dot" />
+            Нүүр хуудас болон цэс
           </p>
+
           <p>
-            <span className={`dot ${isFirebaseConfigured ? "green" : "orange"}`} />
-            Firebase:{" "}
-            {isFirebaseConfigured ? "тохиргоо олдсон" : "холбох шаардлагатай"}
+            <span className="dot" />
+            Ирц бүртгэх, Excel татах
           </p>
+
           <p>
-            <span className="dot orange" /> Ирц хадгалалт: одоогоор зөвхөн
-            сессийн загвар
+            <span className="dot" />
+            Хоцорсон сурагч бүртгэх
           </p>
         </div>
 
-        <div className="info-card">
-          <h3>Дараагийн алхам</h3>
-          <ol>
-            <li>Node.js суулгах</li>
-            <li>Төслийн хавтсыг VS Code-д нээх</li>
-            <li>
-              <code>npm install</code> ажиллуулах
-            </li>
-            <li>
-              <code>npm run dev</code> ажиллуулах
-            </li>
-          </ol>
-        </div>
       </aside>
+
     </main>
   );
-}
-
-function GraduationCapIcon() {
-  return <span className="cap-symbol">◆</span>;
 }

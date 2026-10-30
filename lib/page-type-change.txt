@@ -1,0 +1,16 @@
+lib/attendance-types.ts файлын Page төрлийг ингэж шинэчил:
+
+export type Page =
+  | "install"
+  | "login"
+  | "home"
+  | "grades"
+  | "sections"
+  | "attendance"
+  | "history"
+  | "profile"
+  | "lateStudents"
+  | "announcements"
+  | "schedule"
+  | "classAttendance";
+

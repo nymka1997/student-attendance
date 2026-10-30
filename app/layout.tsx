@@ -12,7 +12,10 @@ export const metadata: Metadata = {
   manifest: "/manifest.webmanifest",
   applicationName: "Сурагчийн ирц",
   appleWebApp: { capable: true, title: "Сурагчийн ирц", statusBarStyle: "default" },
-  icons: { icon: "/icon.svg", apple: "/icon.svg" },
+  icons: {
+  icon: '/icon.svg',
+  apple: '/apple-touch-icon.png'
+}git 
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

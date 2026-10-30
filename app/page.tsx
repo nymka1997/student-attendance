@@ -36,7 +36,7 @@ import type {
   Status,
   Student,
 } from "@/lib/attendance-types";
-
+import { FirebaseError } from "firebase/app";
 import {
   initialNames,
   statuses,
@@ -312,16 +312,19 @@ useEffect(() => {
     setUsername(userData.name || phone);
     setPage("home");
 
-  } catch (error: any) {
+  } catch (error: unknown) {
   console.error("Нэвтрэх алдаа:", error);
 
+  const code =
+    error instanceof FirebaseError ? error.code : "";
+
   if (
-    error.code === "auth/invalid-credential" ||
-    error.code === "auth/user-not-found" ||
-    error.code === "auth/wrong-password"
+    code === "auth/invalid-credential" ||
+    code === "auth/user-not-found" ||
+    code === "auth/wrong-password"
   ) {
     setLoginError("Нэвтрэх нэр эсвэл нууц үг буруу байна.");
-  } else if (error.code === "auth/too-many-requests") {
+  } else if (code === "auth/too-many-requests") {
     setLoginError("Олон удаа буруу оролдлоо. Түр хүлээнэ үү.");
   } else {
     setLoginError("Нэвтрэхэд алдаа гарлаа. Дахин оролдоно уу.");
@@ -349,10 +352,11 @@ useEffect(() => {
     setSavedMessage("");
     setSearch("");
     setLoggingOut(false);
-  } catch (error) {
-    console.error("Системээс гарах алдаа:", error);
-    setLoggingOut(false);
-  }
+  } catch (error: unknown) {
+  console.error("Гарах алдаа:", error);
+} finally {
+  setLoggingOut(false);
+}
 };
 
   // Хуудасны гарчиг

@@ -1,23 +1,42 @@
-import type { Metadata } from "next";
+
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
-import type { Viewport } from "next";
+
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
 };
+
 export const metadata: Metadata = {
   title: "Сурагчийн ирц",
   description: "Сургуулийн ирцийн бүртгэлийн систем",
   manifest: "/manifest.webmanifest",
   applicationName: "Сурагчийн ирц",
-  appleWebApp: { capable: true, title: "Сурагчийн ирц", statusBarStyle: "default" },
+
+  appleWebApp: {
+    capable: true,
+    title: "Сурагчийн ирц",
+    statusBarStyle: "default",
+  },
+
   icons: {
-  icon: '/icon.svg',
-  apple: '/apple-touch-icon.png'
-}git 
+    icon: [
+      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
+    ],
+    apple: "/apple-touch-icon.png",
+  },
 };
 
-export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="mn"><body>{children}</body></html>;
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
+  return (
+    <html lang="mn">
+      <body>{children}</body>
+    </html>
+  );
 }

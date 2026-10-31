@@ -1,14 +1,15 @@
-import { Check, FileSpreadsheet, Save, Search } from "lucide-react";
+import { Check, Save, Search } from "lucide-react";
 import type { Status, Student } from "@/lib/attendance-types";
 import { statuses, statusClass } from "@/lib/attendance-data";
 
 export default function AttendancePage(props: {
   students: Student[]; filteredStudents: Student[]; date: string; setDate: (v: string) => void;
   search: string; setSearch: (v: string) => void; counts: Record<Status, number>;
+  
   setStatus: (id: number, status: Status) => void; savedMessage: string;
-  onSave: () => void; onExport: () => void;
+  onSave: () => void; 
 }) {
-  const { students, filteredStudents, date, setDate, search, setSearch, counts, setStatus, savedMessage, onSave, onExport } = props;
+  const { students, filteredStudents, date, setDate, search, setSearch, counts, setStatus, savedMessage, onSave,  } = props;
   return <div className="attendance-page">
     <div className="toolbar">
       <label className="date-label">Огноо<input type="date" value={date} onChange={e => setDate(e.target.value)} /></label>

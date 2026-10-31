@@ -9,7 +9,12 @@ export default function LoginPage({
   return (
     <div className="login-page">
       <div className="brand">
-        <div className="brand-icon"><img src="/icon.svg" alt="Сургуулийн лого" className="school-logo" /></div>
+        <div className="brand-icon"><img
+  src="/icon-192.png"
+  alt="Сурагчийн ирц"
+  width={80}
+  height={80}
+/></div>
         <h1>Сурагчийн ирц</h1>
         <p>Сургуулийн ирцийн бүртгэлийн систем</p>
       </div>

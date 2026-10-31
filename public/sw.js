@@ -4,7 +4,8 @@ const CACHE_NAME = "student-attendance-v1";
 const APP_FILES = [
   "/",
   "/manifest.webmanifest",
-  "/icon.svg",
+  "/icon-192.png",
+"/icon-512.png",
 ];
 
 self.addEventListener("install", (event) => {

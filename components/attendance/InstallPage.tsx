@@ -118,13 +118,12 @@ export default function InstallPage({
         <div className="login-page">
           <div className="brand">
             <div className="brand-icon">
-              <Image
-                src="/icon.svg"
-                alt="Сургуулийн лого"
-                width={64}
-                height={64}
-                priority
-              />
+             <Image
+  src="/icon-192.png"
+  alt="Сурагчийн ирц"
+  width={80}
+  height={80}
+/>
             </div>
 
             <h1>Сурагчийн ирц</h1>

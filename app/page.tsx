@@ -16,7 +16,6 @@ import {
   X,
   LogOut,
 } from "lucide-react";
-import * as XLSX from "xlsx";
 import {
   onAuthStateChanged,
   signOut,
@@ -27,7 +26,16 @@ import {
 import {
   doc,
   getDoc,
+  setDoc,
+  serverTimestamp,
+  collection,
+  getDocs,
+  query,
+  where,
+  type Firestore,
 } from "firebase/firestore";
+
+
 
 import { auth, db } from "@/lib/firebase";
 
@@ -37,10 +45,7 @@ import type {
   Student,
 } from "@/lib/attendance-types";
 import { FirebaseError } from "firebase/app";
-import {
-  initialNames,
-  statuses,
-} from "@/lib/attendance-data";
+import { statuses } from "@/lib/attendance-data";
 
 import LoginPage from "@/components/attendance/LoginPage";
 import InstallPage from "@/components/attendance/InstallPage";
@@ -74,18 +79,12 @@ export default function HomePage() {
   const [search, setSearch] = useState("");
 
   const [savedMessage, setSavedMessage] = useState("");
-
+  const [attendanceLoading, setAttendanceLoading] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
 
   const [profileOpen, setProfileOpen] = useState(false);
 
-  const [students, setStudents] = useState<Student[]>(
-    initialNames.map((name, i) => ({
-      id: i + 1,
-      name,
-      status: "",
-    }))
-  );
+ const [students, setStudents] = useState<Student[]>([]);
 const [loginError, setLoginError] = useState("");
   // PWA суулгасан эсэхийг шалгана. Суулгаагүй бол эхлээд суулгах дэлгэц харуулна.
   useEffect(() => {
@@ -172,6 +171,105 @@ useEffect(() => {
   }
 }, []);
 
+// Firebase-ээс бодит сурагч болон хадгалсан ирц татах
+useEffect(() => {
+  const firestore = db;
+
+  if (!firestore || page !== "attendance" || !currentUser) {
+    return;
+  }
+
+  // Null шалгалтын дараа баталгаатай Firestore instance
+  const firestoreDb: Firestore = firestore;
+  const uid = currentUser.uid;
+  let cancelled = false;
+
+  async function loadAttendance() {
+    setAttendanceLoading(true);
+    setSavedMessage("");
+
+    try {
+      // "6-р анги" гэсэн утгаас "6"-г ялгаж авна.
+      const gradeValue = grade.match(/\d+/)?.[0] || "";
+
+      // "6а" эсвэл "А" гэсэн утгаас бүлгийн үсгийг ялгана.
+      const sectionValue =
+        section.match(/[А-Яа-яЁёӨөҮү]$/)?.[0]?.toLocaleUpperCase("mn-MN") || "";
+
+      const studentsQuery = query(
+        collection(firestoreDb, "students"),
+        where("grade", "==", gradeValue)
+      );
+
+      const studentSnapshot = await getDocs(studentsQuery);
+      if (cancelled) return;
+
+      const realStudents: Student[] = studentSnapshot.docs
+        .filter((item) => {
+          const data = item.data();
+          return String(data.section || "")
+            .trim()
+            .toLocaleUpperCase("mn-MN") === sectionValue;
+        })
+        .map((item, index) => {
+          const data = item.data();
+          return {
+            id: Number(data.id) || index + 1,
+            name: String(data.name || ""),
+            status: "" as const,
+          };
+        })
+        .filter((student) => student.name.length > 0);
+
+      const attendanceId = `${uid}_${section}_${date}`;
+      const attendanceRef = doc(firestoreDb, "attendance", attendanceId);
+      const attendanceSnapshot = await getDoc(attendanceRef);
+
+      if (cancelled) return;
+
+      if (attendanceSnapshot.exists()) {
+        const savedData = attendanceSnapshot.data();
+        const savedStudents = Array.isArray(savedData.students)
+          ? (savedData.students as Student[])
+          : [];
+
+        const mergedStudents: Student[] = realStudents.map((student) => {
+          const saved = savedStudents.find(
+            (item) => Number(item.id) === student.id
+          );
+
+          return {
+            ...student,
+            status:
+              saved && statuses.includes(saved.status as Status)
+                ? (saved.status as Status)
+                : "",
+          };
+        });
+
+        setStudents(mergedStudents);
+      } else {
+        setStudents(realStudents);
+      }
+    } catch (error) {
+      console.error("Ирц болон сурагч татах алдаа:", error);
+      setStudents([]);
+      setSavedMessage("Сурагчдын мэдээлэл татахад алдаа гарлаа.");
+    } finally {
+      if (!cancelled) {
+        setAttendanceLoading(false);
+      }
+    }
+  }
+
+  void loadAttendance();
+
+  return () => {
+    cancelled = true;
+  };
+}, [page, currentUser, section, date, grade]);
+
+
   // Хайлтаар сурагч шүүх
   const filteredStudents = useMemo(
     () =>
@@ -211,46 +309,57 @@ useEffect(() => {
     );
   };
 
-  // Excel файл татах
-  const exportExcel = () => {
-    const rows = students.map((s, i) => ({
-      "№": i + 1,
-      "Сурагчийн нэр": s.name,
-      "Анги": grade,
-      "Бүлэг": section,
-      "Огноо": date,
-      "Ирцийн төлөв": s.status || "Бүртгээгүй",
-    }));
-
-    const sheet = XLSX.utils.json_to_sheet(rows);
-
-    const book = XLSX.utils.book_new();
-
-    XLSX.utils.book_append_sheet(
-      book,
-      sheet,
-      "Ирц"
-    );
-
-    XLSX.writeFile(
-      book,
-      `irts-${section}-${date}.xlsx`
-    );
-  };
 
   // Ирц хадгалсан мэдэгдэл
-  const saveAttendance = () => {
-    setSavedMessage(
-      `Энэ сессэд ${
-        students.filter((s) => s.status).length
-      } сурагчийн ирцийг тэмдэглэлээ.`
+ 
+const saveAttendance = async () => {
+  const firestore = db;
+  const user = currentUser;
+
+  if (!firestore || !user) {
+    setSavedMessage("Firebase холболт эсвэл хэрэглэгчийн мэдээлэл олдсонгүй.");
+    return;
+  }
+
+  if (attendanceLoading) {
+    setSavedMessage("Сурагчдын мэдээлэл ачаалж байна. Түр хүлээнэ үү.");
+    return;
+  }
+
+  if (students.length === 0) {
+    setSavedMessage("Хадгалах сурагч олдсонгүй. Анги, бүлгийн сонголтоо шалгана уу.");
+    return;
+  }
+
+  try {
+    const attendanceId = `${user.uid}_${section}_${date}`;
+    const attendanceRef = doc(firestore, "attendance", attendanceId);
+    await setDoc(
+      attendanceRef,
+      {
+        teacherUid: user.uid,
+        teacherName: username,
+        grade,
+        section,
+        date,
+        students: students.map((student) => ({
+          id: student.id,
+          name: student.name,
+          status: student.status,
+        })),
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true }
     );
 
-    window.setTimeout(
-      () => setSavedMessage(""),
-      3500
+    setSavedMessage(
+      `${students.filter((student) => student.status !== "").length} сурагчийн ирцийг Firebase-д хадгаллаа.`
     );
-  };
+  } catch (error) {
+    console.error("Ирц хадгалах алдаа:", error);
+    setSavedMessage("Ирц хадгалахад алдаа гарлаа. Firebase Rules болон интернет холболтоо шалгана уу.");
+  }
+};
 
   // Хуудас нээх
   const openPage = (target: Page) => {
@@ -585,32 +694,33 @@ useEffect(() => {
             {/* АНГИ СОНГОХ */}
             {page === "grades" && (
               <GradesPage
-                onSelect={(g) => {
-                  setGrade(g);
+                onSelect={(s) => {
+                  setGrade(s);
                   setPage("sections");
                 }}
               />
             )}
 
             {/* БҮЛЭГ СОНГОХ */}
-            {page === "sections" && (
-              <SectionsPage
-                grade={grade}
-                onSelect={(s) => {
-                  setSection(s);
+           {page === "grades" && (
+  <GradesPage
+    onSelect={(s) => {
+      setGrade(s);
+      setPage("sections");
+    }}
+  />
+)}
 
-                  setStudents(
-                    initialNames.map((name, i) => ({
-                      id: i + 1,
-                      name,
-                      status: "",
-                    }))
-                  );
-
-                  setPage("attendance");
-                }}
-              />
-            )}
+{page === "sections" && (
+  <SectionsPage
+    grade={grade}
+    onSelect={(s) => {
+      setSection(s);
+      setStudents([]);
+      setPage("attendance");
+    }}
+  />
+)}
 
             {/* ИРЦ БҮРТГЭХ */}
             {page === "attendance" && (
@@ -625,7 +735,7 @@ useEffect(() => {
                 setStatus={setStudentStatus}
                 savedMessage={savedMessage}
                 onSave={saveAttendance}
-                onExport={exportExcel}
+                
               />
             )}
 
@@ -816,7 +926,7 @@ useEffect(() => {
 
           <p>
             <span className="dot" />
-            Ирц бүртгэх, Excel татах
+            Ирц бүртгэх, хадгалах
           </p>
 
           <p>

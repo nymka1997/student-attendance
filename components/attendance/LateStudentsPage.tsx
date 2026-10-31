@@ -63,6 +63,8 @@ export default function LateStudentsPage() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [sectionOpen, setSectionOpen] = useState(false);
+  const [studentOpen, setStudentOpen] = useState(false);
+  
 
   // Нэвтэрсэн хэрэглэгчийг шалгах
   useEffect(() => {
@@ -370,34 +372,82 @@ setStudent(list[0]?.id || "");
 </label>
         </div>
 
-        <label className="date-label">
-          Сурагчийн нэр
-          <select
-            value={student}
-            onChange={(e) => setStudent(e.target.value)}
-            disabled={loading || students.length === 0}
-            required
-            style={{
-              minHeight: 42,
-              border: "1px solid #e5eaf1",
-              borderRadius: 9,
-              padding: 8,
-            }}
-          >
-            {students.length === 0 && (
-              <option value="">
-                {loading ? "Уншиж байна..." : "Сурагч олдсонгүй"}
-              </option>
-            )}
+        <label className="date-label" style={{ position: "relative" }}>
+  Сурагчийн нэр
 
-            {students.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
-        </label>
+  <button
+    type="button"
+    onClick={() => setStudentOpen(!studentOpen)}
+    disabled={loading || students.length === 0}
+    style={{
+      width: "100%",
+      height: 42,
+      border: "1px solid #dbe3ef",
+      borderRadius: 7,
+      background: "#f8fafc",
+      fontSize: 13,
+      fontWeight: 600,
+      textAlign: "left",
+      padding: "0 12px",
+      cursor: "pointer",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+    }}
+  >
+    <span>
+      {loading
+        ? "Уншиж байна..."
+        : students.find((s) => String(s.id) === student)?.name ||
+          "Сурагч сонгох"}
+    </span>
+    <span>{studentOpen ? "▲" : "▼"}</span>
+  </button>
 
+  {studentOpen && (
+    <div
+      style={{
+        position: "absolute",
+        zIndex: 50,
+        top: "100%",
+        left: 0,
+        width: "100%",
+        maxHeight: 112,
+        overflowY: "auto",
+        border: "1px solid #dbe3ef",
+        borderRadius: 7,
+        background: "#fff",
+        boxShadow: "0 5px 15px #00000012",
+      }}
+    >
+      {students.map((s) => (
+        <button
+          key={s.id}
+          type="button"
+          onClick={() => {
+            setStudent(String(s.id));
+            setStudentOpen(false);
+          }}
+          style={{
+            display: "block",
+            width: "100%",
+            minHeight: 28,
+            border: "none",
+            borderBottom: "1px solid #f1f5f9",
+            background:
+              student === String(s.id) ? "#dbeafe" : "#fff",
+            fontSize: 13,
+            textAlign: "left",
+            padding: "5px 10px",
+            cursor: "pointer",
+          }}
+        >
+          {s.name}
+        </button>
+      ))}
+    </div>
+  )}
+</label>
         <label className="date-label">
           Хоцорсон минут
           <input

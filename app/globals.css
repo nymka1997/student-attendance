@@ -699,3 +699,13 @@ body {
   overflow: visible !important;
   padding-bottom: 40px;
 }
+
+html,
+body {
+  touch-action: pan-x pan-y;
+  overscroll-behavior: none;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}git 

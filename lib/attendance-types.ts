@@ -1,5 +1,5 @@
 export type Status = "Ирсэн" | "Өвчтэй" | "Чөлөөтэй" | "Тасалсан";
-export type Student = { id: number; name: string; status: Status | "" };
+export type Student = { id: string; name: string; status: Status | "" };
 export type Page =
   | "install"
   | "login"

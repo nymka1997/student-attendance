@@ -55,6 +55,27 @@ import SectionsPage from "@/components/attendance/SectionsPage";
 import AttendancePage from "@/components/attendance/AttendancePage";
 import HistoryPage from "@/components/attendance/HistoryPage";
 import LateStudentsPage from "@/components/attendance/LateStudentsPage";
+type DutyAssignment = {
+  id: string;
+  date: string;
+  building: string;
+  shift: "Өглөө" | "Өдөр";
+  teacher1Id: string;
+  teacher1Name: string;
+  teacher2Id: string;
+  teacher2Name: string;
+};
+type ClassInfo = {
+  id: string;
+  grade: string;
+  section: string;
+  teacher: string;
+  teacherPhone: string;
+  count: number;
+  building: string;
+  classRoom: string;
+  shift: string;
+}; 
 
 export default function HomePage() {
   const [page, setPage] = useState<Page>("login");
@@ -81,8 +102,17 @@ export default function HomePage() {
   const [savedMessage, setSavedMessage] = useState("");
   const [attendanceLoading, setAttendanceLoading] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [dutyAssignments, setDutyAssignments] =
+  useState<DutyAssignment[]>([]);
+
+const [dutyLoading, setDutyLoading] = useState(false);
 
   const [profileOpen, setProfileOpen] = useState(false);
+
+  const [classInfos, setClassInfos] = useState<ClassInfo[]>([]);
+const [classesLoading, setClassesLoading] = useState(false);
+
+
 
  const [students, setStudents] = useState<Student[]>([]);
 const [loginError, setLoginError] = useState("");
@@ -94,6 +124,172 @@ const [loginError, setLoginError] = useState("");
 
     setShowInstall(!standalone);
   }, []);
+
+useEffect(() => {
+  if (!db || !currentUser) {
+    setDutyAssignments([]);
+    return;
+  }
+
+  let cancelled = false;
+
+  async function loadDuty() {
+    setDutyLoading(true);
+
+    try {
+      const today = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Ulaanbaatar",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).format(new Date());
+
+      const dutiesRef = collection(db!, "dutyAssignments");
+
+      const [first, second] = await Promise.all([
+        getDocs(
+          query(
+            dutiesRef,
+            where("date", "==", today),
+            where("teacher1Id", "==", currentUser!.uid)
+          )
+        ),
+
+        getDocs(
+          query(
+            dutiesRef,
+            where("date", "==", today),
+            where("teacher2Id", "==", currentUser!.uid)
+          )
+        ),
+      ]);
+
+      // FIREBASE ШАЛГАЛТ
+      console.log("===== ЖИЖҮҮРИЙН ШАЛГАЛТ =====");
+      console.log("Өнөөдрийн огноо:", today);
+      console.log("Багшийн UID:", currentUser!.uid);
+
+      console.log(
+        "Teacher1:",
+        first.docs.map((d) => ({
+          id: d.id,
+          ...d.data(),
+        }))
+      );
+
+      console.log(
+        "Teacher2:",
+        second.docs.map((d) => ({
+          id: d.id,
+          ...d.data(),
+        }))
+      );
+
+      console.log("Нийт хуваарь:", first.size + second.size);
+
+      if (cancelled) return;
+
+      const unique = new Map<string, DutyAssignment>();
+
+      [...first.docs, ...second.docs].forEach((item) => {
+        unique.set(item.id, {
+          id: item.id,
+          ...item.data(),
+        } as DutyAssignment);
+      });
+
+      setDutyAssignments(Array.from(unique.values()));
+
+    } catch (error) {
+      console.error("Жижүүрийн хуваарь татах алдаа:", error);
+      setDutyAssignments([]);
+    } finally {
+      if (!cancelled) {
+        setDutyLoading(false);
+      }
+    }
+  }
+
+  void loadDuty();
+
+  return () => {
+    cancelled = true;
+  };
+}, [currentUser]);
+
+
+// Өнөөдөр жижүүрээр томилогдсон эсэх
+const isDutyTeacher = dutyAssignments.length > 0;
+
+
+// Firestore-оос сонгосон ангийн мэдээлэл татах
+useEffect(() => {
+  const firestore = db;
+
+  if (!firestore || page !== "sections") {
+    return;
+  }
+
+  let cancelled = false;
+
+  async function loadClasses() {
+    setClassesLoading(true);
+
+    try {
+      const gradeValue = grade.match(/\d+/)?.[0] || "";
+
+      const classesQuery = query(
+        collection(firestore!, "classes"),
+        where("grade", "==", gradeValue)
+      );
+
+      const snapshot = await getDocs(classesQuery);
+
+      if (cancelled) return;
+
+      const result: ClassInfo[] = snapshot.docs.map((item) => {
+        const data = item.data();
+
+        return {
+          id: item.id,
+          grade: String(data.grade || ""),
+          section: String(data.section || ""),
+          teacher: String(data.teacher || ""),
+          teacherPhone: String(data.teacherPhone || ""),
+          count: Number(data.count || 0),
+          building: String(data.building || ""),
+          classRoom: String(data.classRoom || ""),
+          shift: String(data.shift || ""),
+        };
+      });
+
+      setClassInfos(result);
+
+    } catch (error) {
+      console.error("Ангийн мэдээлэл татах алдаа:", error);
+      setClassInfos([]);
+    } finally {
+      if (!cancelled) {
+        setClassesLoading(false);
+      }
+    }
+  }
+
+  void loadClasses();
+
+  return () => {
+    cancelled = true;
+  };
+}, [page, grade]);
+
+const setAllStatus = (status: Status) => {
+  setStudents(prev =>
+    prev.map(student => ({
+      ...student,
+      status,
+    }))
+  );
+};
 
   // Firebase нэвтрэлтийн төлөвийг автоматаар шалгана
 
@@ -108,53 +304,66 @@ useEffect(() => {
     setPage("login");
     return;
   }
+const unsubscribe = onAuthStateChanged(
+  firebaseAuth,
+  async (user) => {
+    if (!user) {
+      setCurrentUser(null);
+      setUsername("");
+      setPage("login");
+      setAuthChecking(false);
+      return;
+    }
 
-  const unsubscribe = onAuthStateChanged(
-    firebaseAuth,
-    async (user) => {
-      if (!user) {
+    try {
+      // teachers цуглуулгаас UID-аар багш хайна
+      const teacherQuery = query(
+        collection(firestore, "teachers"),
+        where("uid", "==", user.uid)
+      );
+
+      const teacherSnapshot = await getDocs(teacherQuery);
+
+      if (teacherSnapshot.empty) {
+        console.error("Багш олдсонгүй. UID:", user.uid);
+
+        await signOut(firebaseAuth);
         setCurrentUser(null);
         setUsername("");
         setPage("login");
-        setAuthChecking(false);
         return;
       }
 
-      try {
-        const userRef = doc(firestore, "users", user.uid);
-        const userSnapshot = await getDoc(userRef);
+      const teacherData = teacherSnapshot.docs[0].data();
 
-        if (!userSnapshot.exists()) {
-          await signOut(firebaseAuth);
-          setCurrentUser(null);
-          setPage("login");
-          return;
-        }
-
-        const userData = userSnapshot.data();
-
-        if (userData.role !== "teacher") {
-          await signOut(firebaseAuth);
-          setCurrentUser(null);
-          setPage("login");
-          return;
-        }
-
-        setCurrentUser(user);
-        setUsername(
-          userData.name || user.displayName || user.email || ""
-        );
-        setPage("home");
-      } catch (error) {
-        console.error("Хэрэглэгчийн эрх шалгах алдаа:", error);
+      if (teacherData.role !== "teacher") {
         await signOut(firebaseAuth);
         setCurrentUser(null);
+        setUsername("");
         setPage("login");
-      } finally {
-        setAuthChecking(false);
+        return;
       }
+
+      setCurrentUser(user);
+      setUsername(
+        teacherData.name || user.displayName || user.email || ""
+      );
+      setPage("home");
+
+    } catch (error) {
+      console.error("Багшийн эрх шалгах алдаа:", error);
+
+      await signOut(firebaseAuth);
+      setCurrentUser(null);
+      setUsername("");
+      setPage("login");
+
+    } finally {
+      setAuthChecking(false);
     }
-  );
+  }
+);
+
 
   return () => unsubscribe();
 }, []);
@@ -195,31 +404,35 @@ useEffect(() => {
       // "6а" эсвэл "А" гэсэн утгаас бүлгийн үсгийг ялгана.
       const sectionValue =
         section.match(/[А-Яа-яЁёӨөҮү]$/)?.[0]?.toLocaleUpperCase("mn-MN") || "";
-
       const studentsQuery = query(
-        collection(firestoreDb, "students"),
-        where("grade", "==", gradeValue)
-      );
+  collection(firestoreDb, "students"),
+  where("grade", "==", gradeValue),
+  where("section", "==", sectionValue)
+);
 
-      const studentSnapshot = await getDocs(studentsQuery);
+const studentSnapshot = await getDocs(studentsQuery);
+
+      
       if (cancelled) return;
 
       const realStudents: Student[] = studentSnapshot.docs
-        .filter((item) => {
-          const data = item.data();
-          return String(data.section || "")
-            .trim()
-            .toLocaleUpperCase("mn-MN") === sectionValue;
-        })
-        .map((item, index) => {
-          const data = item.data();
-          return {
-            id: Number(data.id) || index + 1,
-            name: String(data.name || ""),
-            status: "" as const,
-          };
-        })
-        .filter((student) => student.name.length > 0);
+  .filter((item) => {
+    const data = item.data();
+
+    return String(data.section || "")
+      .trim()
+      .toLocaleUpperCase("mn-MN") === sectionValue;
+  })
+  .map((item) => {
+    const data = item.data();
+
+    return {
+      id: String(data.id || item.id),
+      name: String(data.name || ""),
+      status: "Ирсэн" as Status,
+    };
+  })
+  .filter((student) => student.name.length > 0);
 
       const attendanceId = `${uid}_${section}_${date}`;
       const attendanceRef = doc(firestoreDb, "attendance", attendanceId);
@@ -235,7 +448,7 @@ useEffect(() => {
 
         const mergedStudents: Student[] = realStudents.map((student) => {
           const saved = savedStudents.find(
-            (item) => Number(item.id) === student.id
+            (item) => String(item.id) === student.id
           );
 
           return {
@@ -294,7 +507,7 @@ useEffect(() => {
 
   // Сурагчийн ирц өөрчлөх
   const setStudentStatus = (
-    id: number,
+    id: string,
     status: Status
   ) => {
     setStudents((current) =>
@@ -361,12 +574,20 @@ const saveAttendance = async () => {
   }
 };
 
-  // Хуудас нээх
-  const openPage = (target: Page) => {
-    setPage(target);
-    setMenuOpen(false);
-    setProfileOpen(false);
-  };
+  // Хуудас нээх// Хуудас нээх
+const openPage = (target: Page) => {
+  // Жижүүр биш багш ирц болон хоцролтын хэсэгт орохгүй
+  if (
+    (target === "grades" || target === "lateStudents") &&
+    !isDutyTeacher
+  ) {
+    return;
+  }
+
+  setPage(target);
+  setMenuOpen(false);
+  setProfileOpen(false);
+};
 
   // Буцах
   const goBack = () => {
@@ -380,7 +601,20 @@ const saveAttendance = async () => {
   };
 
 
-  const handleLogin = async (password: string) => {
+const selectedClassInfo = classInfos.find((item) => {
+  const gradeValue = grade.match(/\d+/)?.[0] || "";
+
+  const sectionValue =
+    section.match(/[А-Яа-яЁёӨөҮү]$/)?.[0]
+      ?.toLocaleUpperCase("mn-MN") || "";
+
+  return (
+    item.grade.trim() === gradeValue &&
+    item.section.trim().toLocaleUpperCase("mn-MN") === sectionValue
+  );
+}) ?? null;
+
+const handleLogin = async (password: string) => {
   const firebaseAuth = auth;
   const firestore = db;
 
@@ -405,54 +639,52 @@ const saveAttendance = async () => {
       password
     );
 
-    const userRef = doc(
-      firestore,
-      "users",
-      credential.user.uid
+    // teachers цуглуулгаас UID талбараар багш хайна
+    const teacherQuery = query(
+      collection(firestore, "teachers"),
+      where("uid", "==", credential.user.uid)
     );
 
-    const userSnapshot = await getDoc(userRef);
+    const teacherSnapshot = await getDocs(teacherQuery);
 
-    if (!userSnapshot.exists()) {
+    if (teacherSnapshot.empty) {
       await signOut(firebaseAuth);
-      alert("Хэрэглэгчийн эрхийн мэдээлэл олдсонгүй.");
+      setLoginError("Багшийн мэдээлэл олдсонгүй.");
       return;
     }
 
-    const userData = userSnapshot.data();
+    const teacherData = teacherSnapshot.docs[0].data();
 
-    if (userData.role !== "teacher") {
+    if (teacherData.role !== "teacher") {
       await signOut(firebaseAuth);
-      alert("Энэ системд зөвхөн багшийн эрхээр нэвтэрнэ.");
+      setLoginError("Энэ системд зөвхөн багшийн эрхээр нэвтэрнэ.");
       return;
     }
 
     setLoginError("");
-
     setCurrentUser(credential.user);
-    setUsername(userData.name || phone);
+    setUsername(teacherData.name || phone);
     setPage("home");
 
   } catch (error: unknown) {
-  console.error("Нэвтрэх алдаа:", error);
+    console.error("Нэвтрэх алдаа:", error);
 
-  const code =
-    error instanceof FirebaseError ? error.code : "";
+    const code =
+      error instanceof FirebaseError ? error.code : "";
 
-  if (
-    code === "auth/invalid-credential" ||
-    code === "auth/user-not-found" ||
-    code === "auth/wrong-password"
-  ) {
-    setLoginError("Нэвтрэх нэр эсвэл нууц үг буруу байна.");
-  } else if (code === "auth/too-many-requests") {
-    setLoginError("Олон удаа буруу оролдлоо. Түр хүлээнэ үү.");
-  } else {
-    setLoginError("Нэвтрэхэд алдаа гарлаа. Дахин оролдоно уу.");
+    if (
+      code === "auth/invalid-credential" ||
+      code === "auth/user-not-found" ||
+      code === "auth/wrong-password"
+    ) {
+      setLoginError("Нэвтрэх нэр эсвэл нууц үг буруу байна.");
+    } else if (code === "auth/too-many-requests") {
+      setLoginError("Олон удаа буруу оролдлоо. Түр хүлээнэ үү.");
+    } else {
+      setLoginError("Нэвтрэхэд алдаа гарлаа. Дахин оролдоно уу.");
+    }
   }
-}
 };
-
 
   // Firebase-аас гарах
  const handleLogout = async () => {
@@ -482,11 +714,11 @@ const saveAttendance = async () => {
 
   // Хуудасны гарчиг
   const pageTitles: Partial<Record<Page, string>> = {
-    home: "Нүүр хуудас",
+    home: "  ",
     grades: "Анги сонгох",
     sections: `${grade} сонгох`,
     attendance: `${section} ангийн ирц`,
-    history: "Манай ангийн ирц",
+    history: "  ",
     lateStudents: "Хоцорсон сурагч бүртгэх",
     announcements: "Админы зар",
     schedule: "Миний хичээлийн хуваарь",
@@ -513,22 +745,11 @@ const saveAttendance = async () => {
       label: "Миний хичээлийн хуваарь",
       icon: CalendarDays,
       page: "schedule",
-    },
-    {
-      label: "Манай ангийн ирц",
-      icon: UsersRound,
-      page: "history",
-    },
-    {
-      label: "Хоцорсон сурагч бүртгэх",
-      icon: UserRoundPlus,
-      page: "lateStudents",
-    },
-    {
-      label: "Ирц бүртгэх",
-      icon: ClipboardCheck,
-      page: "grades",
-    },
+    },{
+  label: "Ирц харах",
+  icon: CalendarDays,
+  page: "history",
+},
   ];
 
   // Firebase шалгаж байх үед
@@ -653,36 +874,52 @@ const saveAttendance = async () => {
                   padding: 8,
                   boxShadow: "0 12px 30px #00000018",
                 }}
-              >
-                {menuItems.map((item) => {
-                  const Icon = item.icon;
+              >{menuItems.map((item) => {
+  const Icon = item.icon;
 
-                  return (
-                    <button
-                      key={item.page}
-                      onClick={() => openPage(item.page)}
-                      style={{
-                        width: "100%",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 12,
-                        padding: 13,
-                        border: 0,
-                        borderRadius: 9,
-                        background:
-                          page === item.page
-                            ? "#edf2ff"
-                            : "#fff",
-                        textAlign: "left",
-                        color: "#172033",
-                        cursor: "pointer",
-                      }}
-                    >
-                      <Icon size={20} />
-                      <span>{item.label}</span>
-                    </button>
-                  );
-                })}
+  const dutyOnly =
+    item.page === "grades" ||
+    item.page === "lateStudents";
+
+  const disabled =
+    dutyOnly && (dutyLoading || !isDutyTeacher);
+
+  return (
+    <button
+      key={item.page}
+      disabled={disabled}
+      onClick={() => openPage(item.page)}
+      style={{
+        width: "100%",
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        padding: 13,
+        border: 0,
+        borderRadius: 9,
+        background:
+          page === item.page ? "#edf2ff" : "#fff",
+        textAlign: "left",
+        color: disabled ? "#a0a0a0" : "#172033",
+        cursor: disabled ? "not-allowed" : "pointer",
+        opacity: disabled ? 0.5 : 1,
+      }}
+    >
+      <Icon size={20} />
+      <span>{item.label}</span>
+
+      {dutyOnly && (
+        <span style={{ marginLeft: "auto", fontSize: 11 }}>
+          {dutyLoading
+            ? "Шалгаж байна..."
+            : isDutyTeacher
+              ? "Идэвхтэй"
+              : "Жижүүр биш"}
+        </span>
+      )}
+    </button>
+  );
+})}
               </div>
             )}
 
@@ -702,14 +939,7 @@ const saveAttendance = async () => {
             )}
 
             {/* БҮЛЭГ СОНГОХ */}
-           {page === "grades" && (
-  <GradesPage
-    onSelect={(s) => {
-      setGrade(s);
-      setPage("sections");
-    }}
-  />
-)}
+           
 
 {page === "sections" && (
   <SectionsPage
@@ -723,29 +953,30 @@ const saveAttendance = async () => {
 )}
 
             {/* ИРЦ БҮРТГЭХ */}
-            {page === "attendance" && (
-              <AttendancePage
-                students={students}
-                filteredStudents={filteredStudents}
-                date={date}
-                setDate={setDate}
-                search={search}
-                setSearch={setSearch}
-                counts={counts}
-                setStatus={setStudentStatus}
-                savedMessage={savedMessage}
-                onSave={saveAttendance}
-                
-              />
-            )}
-
+           {/* ИРЦ БҮРТГЭХ */}
+{page === "attendance" && (
+  <AttendancePage
+    students={students}
+    filteredStudents={filteredStudents}
+    date={date}
+    setDate={setDate}
+    search={search}
+    setSearch={setSearch}
+    counts={counts}
+    setStatus={setStudentStatus}
+    setAllStatus={setAllStatus}
+    savedMessage={savedMessage}
+    onSave={saveAttendance}
+    classInfo={selectedClassInfo}
+    classInfoLoading={classesLoading}
+  />
+)}
             {/* ИРЦИЙН ТҮҮХ */}
-            {(page === "history" ||
-              page === "classAttendance") && (
-              <HistoryPage
-                onChooseGrade={() => setPage("grades")}
-              />
-            )}
+           {/* ИРЦИЙН ТҮҮХ */}
+{(page === "history" ||
+  page === "classAttendance") && (
+  <HistoryPage />
+)}
 
             {/* ХОЦОРСОН СУРАГЧ */}
             {page === "lateStudents" && (
@@ -865,29 +1096,53 @@ const saveAttendance = async () => {
               page === "announcements") && (
               <nav className="bottom-nav">
 
-                <button
-                  type="button"
-                  onClick={() => openPage("lateStudents")}
-                  style={{
-                    background: "#fff7ed",
-                    color: "#c2410c",
-                  }}
-                >
-                  <UserRoundPlus size={22} />
-                  <span>Хоцорсон сурагч бүртгэх</span>
-                </button>
+               {/* ХОЦОРСОН СУРАГЧ */}
+<button
+  type="button"
+  disabled={dutyLoading || !isDutyTeacher}
+  onClick={() => openPage("lateStudents")}
+  style={{
+  background: isDutyTeacher ? "#fff7ed" : "#f8f5f1",
+  color: isDutyTeacher ? "#c2410c" : "#b8aaa0",
+  opacity: 1,
+  cursor: isDutyTeacher ? "pointer" : "not-allowed",
+  transition: "all 0.3s ease",
+  boxShadow: isDutyTeacher
+    ? "0 4px 12px rgba(194,65,12,0.10)"
+    : "none",
+  transform: isDutyTeacher ? "translateY(0)" : "scale(0.99)",
+  border: isDutyTeacher
+    ? "1px solid #fed7aa"
+    : "1px solid #eee9e3",
+}}
+>
+  <UserRoundPlus size={22} />
+  <span>Хоцорсон сурагч бүртгэх</span>
+</button>
 
-                <button
-                  type="button"
-                  onClick={() => openPage("grades")}
-                  style={{
-                    background: "#16a34a",
-                    color: "#fff",
-                  }}
-                >
-                  <ClipboardCheck size={22} />
-                  <span>Ирц бүртгэх</span>
-                </button>
+{/* ИРЦ БҮРТГЭХ */}
+<button
+  type="button"
+  disabled={dutyLoading || !isDutyTeacher}
+  onClick={() => openPage("grades")}
+  style={{
+  background: isDutyTeacher ? "#fff7ed" : "#f8f5f1",
+  color: isDutyTeacher ? "#c2410c" : "#b8aaa0",
+  opacity: 1,
+  cursor: isDutyTeacher ? "pointer" : "not-allowed",
+  transition: "all 0.3s ease",
+  boxShadow: isDutyTeacher
+    ? "0 4px 12px rgba(194,65,12,0.10)"
+    : "none",
+  transform: isDutyTeacher ? "translateY(0)" : "scale(0.99)",
+  border: isDutyTeacher
+    ? "1px solid #fed7aa"
+    : "1px solid #eee9e3",
+}}
+>
+  <ClipboardCheck size={22} />
+  <span>Ирц бүртгэх</span>
+</button>
 
               </nav>
             )}
